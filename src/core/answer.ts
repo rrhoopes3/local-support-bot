@@ -1,4 +1,4 @@
-import { decodeModelResponse, stripInlineUrls } from "./response";
+import { decodeModelResponse } from "./response";
 import { buildIndex, search } from "./retrieval";
 import {
   GenerateError,
@@ -63,18 +63,17 @@ export function validateGeneratedAnswer(
   raw: string,
   citations: Citation[],
 ): string | null {
-  let text = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  // Only a leading reasoning block is dropped; one inside a statement is rejected below.
+  const text = raw.replace(/^\s*<think>[\s\S]*?<\/think>/, "").trim();
   if (
     !text ||
     /<think>|INSUFFICIENT_EVIDENCE/i.test(text) ||
     text.length > 2400
   )
     return null;
-  // Clickable sources come from library metadata. Strip copied http(s)/www
-  // addresses; reject javascript:, markdown links, and HTML tags.
-  if (/javascript:|\]\(|<\/?[a-z]/i.test(text)) return null;
-  text = stripInlineUrls(text);
-  if (!text) return null;
+  // The model does not get to manufacture links. Source URLs are rendered from
+  // library metadata; an answer containing an address falls back to excerpts.
+  if (/https?:\/\/|\bwww\.|javascript:|\]\(|<\/?[a-z]/i.test(text)) return null;
   const allowed = new Set(citations.map((c) => c.id));
   const ids = [...text.matchAll(/\[([A-Za-z]+\d+)\]/g)].map((m) => m[1]!);
   if (!ids.length || ids.some((id) => !allowed.has(id))) return null;

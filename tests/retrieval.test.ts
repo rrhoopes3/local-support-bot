@@ -19,7 +19,6 @@ import {
   citationsFor,
   validateGeneratedAnswer,
 } from "../src/core/answer";
-import { stripInlineUrls } from "../src/core/response";
 import { GenerateError, type Library } from "../src/core/types";
 const sample = validateLibrary(
   JSON.parse(
@@ -41,20 +40,21 @@ test("retrieval ranks the article that answers the question", () => {
     "local-model",
   );
 });
-test("welcome chip asks the phrasing the sample article uses", () => {
+test("the offline welcome chip retrieves the local model article", () => {
   const html = readFileSync(
     new URL("../public/panel.html", import.meta.url),
     "utf8",
   );
-  assert.match(html, /data-question="Can I use the model offline\?"/);
+  const question = html.match(/data-question="([^"]*offline[^"]*)"/)?.[1];
+  assert(question, "offline welcome chip should exist");
   assert.equal(
-    search(buildIndex(sample), "Can I use the model offline?")[0]?.articleId,
+    search(buildIndex(sample), question)[0]?.articleId,
     "local-model",
   );
 });
 test("light suffix stemming is deterministic on query and passage tokens", () => {
   assert.equal(stem("refunds"), "refund");
-  assert.equal(stem("articles"), "article");
+  assert.equal(stem("articles"), stem("article"));
   assert.equal(stem("processor"), "process");
   assert.equal(stem("processors"), "process");
   assert.equal(stem("processed"), "process");
@@ -64,6 +64,19 @@ test("light suffix stemming is deterministic on query and passage tokens", () =>
   assert.equal(stem("charge"), stem("charging"));
   assert.equal(stem("decline"), stem("declined"));
   assert.equal(stem("create"), stem("created"));
+  for (const [base, inflected] of [
+    ["enable", "enabled"],
+    ["enable", "enabling"],
+    ["disable", "disabling"],
+    ["schedule", "scheduled"],
+    ["handle", "handled"],
+    ["menu", "menus"],
+    ["status", "statuses"],
+    ["focus", "focused"],
+    ["cause", "caused"],
+    ["bus", "buses"],
+  ])
+    assert.equal(stem(base!), stem(inflected!), base + "/" + inflected);
   assert.equal(stem("weather"), "weather");
   assert.notEqual(stem("weather"), stem("weath"));
   assert.deepEqual(tokenize("process a refund"), tokenize("processor refunds"));
@@ -73,6 +86,19 @@ test("light suffix stemming is deterministic on query and passage tokens", () =>
   );
   assert(tokenize("add tax to a folio").includes(stem("add")));
   assert(tokenize("make a group booking").includes(stem("make")));
+  assert.deepEqual(tokenize("show today's arrivals"), [
+    stem("today"),
+    stem("arrivals"),
+  ]);
+  assert(!tokenize("the guest won't be charged").includes("won"));
+  assert(tokenize("who won the game").includes("won"));
+  assert.deepEqual(tokenize("please help me"), []);
+});
+test("single-word questions retrieve articles that use the word", () => {
+  const index = buildIndex(sample);
+  assert.equal(search(index, "model")[0]?.articleId, "local-model");
+  assert.equal(search(index, "models")[0]?.articleId, "local-model");
+  assert(search(index, "articles").length > 0);
 });
 test("a single high-IDF term can pass the overlap gate", () => {
   const library: Library = {
@@ -105,7 +131,7 @@ test("article-level fallback joins terms split across chunks", () => {
       {
         id: "payments",
         title: "Payments",
-        text: "alpha " + filler.repeat(20) + "beta ending",
+        text: "alpha " + filler.repeat(35) + "beta ending",
       },
       ...Array.from({ length: 8 }, (_, i) => ({
         id: "alpha-" + i,
@@ -119,9 +145,17 @@ test("article-level fallback joins terms split across chunks", () => {
       })),
     ],
   };
-  const hits = search(buildIndex(library), "alpha beta");
+  const index = buildIndex(library);
+  assert(
+    index.some(
+      (p) => p.articleId === "payments" && !/alpha|beta/.test(p.text),
+    ),
+    "fixture needs a middle chunk with no query terms",
+  );
+  const hits = search(index, "alpha beta");
   assert.equal(hits[0]?.articleId, "payments");
-  assert(hits.length > 0);
+  for (const hit of hits)
+    assert.match(hit.text, /alpha|beta/, hit.id + " has no query terms");
 });
 test("index-style catalog articles are downranked below procedures", () => {
   const library: Library = {
@@ -161,11 +195,147 @@ test("index-style catalog articles are downranked below procedures", () => {
     "payments",
   );
 });
+test("numbered procedures and FAQ-style titles are not treated as catalogs", () => {
+  const steps = [
+    "1. Open Front Desk",
+    "2. Select the reservation",
+    "3. Open the guest folio",
+    "4. Choose Refund",
+    "5. Enter the amount",
+    "6. Pick the original card",
+    "7. Add a note for audit",
+    "8. Click Save",
+  ].join("\n");
+  assert.equal(looksLikeIndexArticle("Refund a payment", steps), false);
+  assert.equal(
+    looksLikeIndexArticle(
+      "Refund a payment",
+      steps.replace(/^(\d+)\./gm, "Step $1:"),
+    ),
+    false,
+  );
+  assert.equal(
+    looksLikeIndexArticle(
+      "How do I refund a payment?",
+      "Open the folio and choose refund.",
+    ),
+    false,
+  );
+  assert.equal(
+    looksLikeIndexArticle("Check-in walkthrough", "Tap check-in and confirm."),
+    false,
+  );
+  assert.equal(looksLikeIndexArticle("Guided walkthroughs", "Guides."), true);
+  const library: Library = {
+    schemaVersion: 1,
+    name: "steps",
+    documents: [
+      { id: "steps", title: "Refund a payment", text: steps },
+      {
+        id: "note",
+        title: "Payments overview",
+        text: "Refunds go back to the original card. A supervisor can approve a refund.",
+      },
+    ],
+  };
+  assert.equal(
+    search(buildIndex(library), "refund card")[0]?.articleId,
+    "steps",
+  );
+});
+test("add/create synonyms count as one question word", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "synonyms",
+    documents: [
+      { id: "rooms", title: "Room types", text: "Add or create room types." },
+      {
+        id: "report1",
+        title: "Reports",
+        text: "The occupancy report lists occupied rooms.",
+      },
+      {
+        id: "report2",
+        title: "Daily report",
+        text: "The report has totals for the day.",
+      },
+    ],
+  };
+  const hits = search(buildIndex(library), "create a report");
+  assert(
+    !hits.some((hit) => hit.articleId === "rooms"),
+    "room types never mention reports",
+  );
+});
+test("a lone generic title word does not retrieve an unrelated article", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "titles",
+    documents: [
+      {
+        id: "rooms",
+        title: "Create room types",
+        text: "Open settings and fill in the form.",
+      },
+      {
+        id: "pay",
+        title: "Payments",
+        text: "Refund payments from the folio. Refund cards.",
+      },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        id: "filler-" + i,
+        title: "Filler " + i,
+        text: "Housekeeping rooms keys night audit.",
+      })),
+    ],
+  };
+  assert(
+    !search(buildIndex(library), "add a refund").some(
+      (hit) => hit.articleId === "rooms",
+    ),
+  );
+  assert.deepEqual(search(buildIndex(library), "how to create pasta"), []);
+});
+test("date words rank passages but do not decide coverage", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "dates",
+    documents: [
+      {
+        id: "today",
+        title: "Today's arrivals",
+        text: "The Today view lists today's arrivals.",
+      },
+      {
+        id: "departures",
+        title: "Departures",
+        text: "Departures list guests checking out.",
+      },
+      ...Array.from({ length: 10 }, (_, i) => ({
+        id: "other-" + i,
+        title: "Other " + i,
+        text: "Housekeeping rooms keys night audit arrivals.",
+      })),
+    ],
+  };
+  const index = buildIndex(library);
+  assert.equal(search(index, "show today's arrivals")[0]?.articleId, "today");
+  assert.equal(
+    search(index, "today's departures")[0]?.articleId,
+    "departures",
+  );
+  assert.deepEqual(search(index, "what is the weather today"), []);
+  assert.deepEqual(search(index, "today"), []);
+  assert.deepEqual(search(index, "yesterday"), []);
+  assert.deepEqual(search(index, "tomorrow"), []);
+});
 test("unrelated or empty queries produce no evidence and never call a model", async () => {
   for (const question of [
     "quantum entanglement theorem",
     "what is the weather today",
     "please help me",
+    "how do I cook pasta for Qwen",
+    "who won the football game yesterday",
   ]) {
     const result = await answerQuestion(sample, question, {
       generate: async () => {
@@ -175,6 +345,27 @@ test("unrelated or empty queries produce no evidence and never call a model", as
     assert.equal(result.mode, "empty", question);
     assert.equal(result.citations.length, 0);
   }
+});
+test("won't in a folio note does not satisfy who-won questions", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "wont",
+    documents: [
+      {
+        id: "pay",
+        title: "Payments",
+        text: "A supervisor who can issue a refund. The guest won't be charged twice.",
+      },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        id: "other-" + i,
+        title: "Other " + i,
+        text: "Housekeeping rooms keys night audit reservations.",
+      })),
+    ],
+  };
+  const index = buildIndex(library);
+  assert.deepEqual(search(index, "who won the football game yesterday"), []);
+  assert.equal(search(index, "refund")[0]?.articleId, "pay");
 });
 test("weather does not match unrelated weath tokens", () => {
   const library: Library = {
@@ -340,53 +531,30 @@ test("model crashes fall back to evidence, but cancellation propagates", async (
     { name: "AbortError" },
   );
 });
-test("http(s) is stripped from statements; invented markup is rejected", async () => {
+test("invented URLs and markup fall back to excerpts", async () => {
   const citations = citationsFor(
     search(buildIndex(sample), "import support articles"),
   );
-  const withUrl =
-    "Open https://admin.example.com to review the dashboard. [S1]";
-  assert.equal(
-    validateGeneratedAnswer(withUrl, citations),
-    "Open to review the dashboard. [S1]",
-  );
-  assert.equal(
-    stripInlineUrls("See www.example.com/help for steps."),
-    "See for steps.",
-  );
-  const answer = await answerQuestion(sample, "import support articles", {
-    generate: async () =>
-      JSON.stringify({
-        answerable: true,
-        statements: [
-          {
-            text: "Articles stay in this browser. See https://example.com/help.",
-            sourceId: "S1",
-          },
-        ],
-      }),
-  });
-  assert.equal(answer.mode, "model");
-  assert.doesNotMatch(answer.text, /https?:\/\//i);
-  assert.match(answer.text, /Articles stay in this browser/);
-  for (const raw of [
-    JSON.stringify({
-      answerable: true,
-      statements: [{ text: "Open javascript:alert(1)", sourceId: "S1" }],
-    }),
-    JSON.stringify({
-      answerable: true,
-      statements: [{ text: "See [docs](https://evil.example)", sourceId: "S1" }],
-    }),
-    JSON.stringify({
-      answerable: true,
-      statements: [{ text: "<p>Injected</p>", sourceId: "S1" }],
-    }),
+  for (const text of [
+    "Open https://admin.example.com to review the dashboard. [S1]",
+    "See www.example.com/help for steps. [S1]",
+  ])
+    assert.equal(validateGeneratedAnswer(text, citations), null, text);
+  for (const text of [
+    "Articles stay in this browser. See https://example.com/help.",
+    "Articles stay in this browser. See <think>https://example.com</think>.",
+    "Open javascript:alert(1)",
+    "See [docs](https://evil.example)",
+    "<p>Injected</p>",
   ]) {
     const result = await answerQuestion(sample, "import support articles", {
-      generate: async () => raw,
+      generate: async () =>
+        JSON.stringify({
+          answerable: true,
+          statements: [{ text, sourceId: "S1" }],
+        }),
     });
-    assert.equal(result.mode, "excerpts", raw);
+    assert.equal(result.mode, "excerpts", text);
   }
 });
 test("citation checks do not claim to prove factual correctness", () => {

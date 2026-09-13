@@ -30,18 +30,13 @@ export function makeAppConfig(): AppConfig {
 
 export const GENERATION_LENGTH_ERROR = "The answer exceeded its budget.";
 
-/** Keep the GPU session after truncated/failed generate; release on abort, crash, or timeout. */
+/** A length-capped completion leaves the engine healthy; any other failure releases it. */
 export function shouldReleaseAfterGenerateFailure(
   error: unknown,
   signal?: AbortSignal,
 ): boolean {
   if (signal?.aborted) return true;
-  if (error instanceof DOMException && error.name === "AbortError") return true;
-  if (error instanceof GenerateError) return false;
-  const message = error instanceof Error ? error.message : "";
-  return (
-    message.includes("model worker stopped") || message.includes("timed out")
-  );
+  return !(error instanceof GenerateError && error.kind === "length");
 }
 
 export function contentFromCompletion(

@@ -13,7 +13,7 @@
     {
       "id": "offline-assistant",
       "question": "Can I use this assistant offline?",
-      "acceptableIds": ["local-model", "answer-sources"]
+      "acceptableIds": ["local-model"]
     },
     {
       "id": "import-docs",

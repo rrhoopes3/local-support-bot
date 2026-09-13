@@ -1,13 +1,14 @@
 import type { Library, Passage } from "./types";
 
 const STOP = new Set(
-  "a an and are as at be by can do does for from how i if in is it me my of on or please that the this to today tomorrow yesterday walk what when where which with you your show through".split(
+  "a about an and are as at be by can do does for from help how i if in is it me my of on or please tell that the this to walk what when where which who why with you your show through".split(
     " ",
   ),
 );
 const CHUNK_CHARS = 900;
+/** Catalog titles. "How do I…" and single-walkthrough titles are procedures. */
 const INDEX_TITLE =
-  /\b(walkthroughs?|table of contents|article index|index of|how do i)\b/i;
+  /\b(walkthroughs|table of contents|article index|index of)\b/i;
 const INDEX_SCORE_SCALE = 0.2;
 const DISTINCTIVE_DF = 0.1;
 const ARTICLE_COVERAGE = 0.35;
@@ -25,12 +26,7 @@ export function stem(token: string): string {
     word.endsWith("shes")
   )
     word = word.slice(0, -2);
-  else if (
-    word.endsWith("s") &&
-    !word.endsWith("ss") &&
-    !word.endsWith("us") &&
-    !word.endsWith("is")
-  )
+  else if (word.endsWith("s") && !word.endsWith("ss") && !word.endsWith("is"))
     word = word.slice(0, -1);
   if (word.endsWith("ing") && word.length > 5) {
     const next = word.slice(0, -3);
@@ -39,8 +35,9 @@ export function stem(token: string): string {
     const next = word.slice(0, -2);
     if (next.length >= 3) word = next;
   }
-  if (word.endsWith("e") && word.length > 3 && !word.endsWith("le"))
-    word = word.slice(0, -1);
+  if (word.endsWith("e") && word.length > 3) word = word.slice(0, -1);
+  // menus/menu, statuses/status, and focused/focus all meet at "…u".
+  if (word.endsWith("us") && word.length > 3) word = word.slice(0, -1);
   if (word.endsWith("or") && word.length > 6) word = word.slice(0, -2);
   return word;
 }
@@ -59,20 +56,34 @@ function synonymIndex(): Map<string, string[]> {
 }
 
 const SYNONYMS = synonymIndex();
+/** Date words rank passages ("today's arrivals") but do not decide whether a question is covered. */
+const MODIFIERS = new Set(["today", "tomorrow", "yesterday"].map(stem));
+
+function expandContractions(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\bwon[’']t\b/g, "will not")
+    .replace(/\bcan[’']t\b/g, "can not")
+    .replace(/n[’']t\b/g, " not");
+}
 
 export function tokenize(text: string): string[] {
-  return (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+  return (expandContractions(text).match(/[\p{L}\p{N}]+/gu) ?? [])
     .filter((t) => t.length > 1 && !STOP.has(t))
     .map(stem);
 }
 
-function expandQuery(terms: string[]): string[] {
-  const out = new Set<string>();
+/** One entry per question word; synonyms widen what satisfies it without counting as extra matches. */
+function queryConcepts(terms: string[]): string[][] {
+  const seen = new Set<string>();
+  const concepts: string[][] = [];
   for (const term of terms) {
-    out.add(term);
-    for (const syn of SYNONYMS.get(term) ?? []) out.add(syn);
+    if (seen.has(term)) continue;
+    const variants = [term, ...(SYNONYMS.get(term) ?? [])];
+    for (const variant of variants) seen.add(variant);
+    concepts.push(variants);
   }
-  return [...out];
+  return concepts;
 }
 
 /** Catalog / walkthrough-index pages steal BM25 from the actual procedure. */
@@ -83,11 +94,13 @@ export function looksLikeIndexArticle(title: string, text: string): boolean {
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length < 8) return false;
+  // Numbered and "Step N" lines are procedure steps, not catalog entries.
   const headingLike = lines.filter(
     (line) =>
       line.length <= 70 &&
       !/[.?!]$/.test(line) &&
-      /^[-*`#\d.]*\s*[\p{L}]/u.test(line),
+      /^[-*`#]*\s*\p{L}/u.test(line) &&
+      !/^step\s*\d/i.test(line),
   );
   return headingLike.length >= 8 && headingLike.length / lines.length >= 0.55;
 }
@@ -97,37 +110,72 @@ function termIdf(df: number, n: number): number {
 }
 
 function isDistinctive(df: number, n: number): boolean {
-  if (df <= 0) return false;
-  if (df === 1) return true;
-  if (df / n > DISTINCTIVE_DF) return false;
-  return termIdf(df, n) >= termIdf(Math.max(1, DISTINCTIVE_DF * n), n);
+  return df === 1 || (df > 0 && df / n <= DISTINCTIVE_DF);
 }
 
-function titleHeavy(query: string[], titleTerms: Set<string>): boolean {
-  const hits = query.filter((term) => titleTerms.has(term)).length;
-  return hits >= 2 || (hits > 0 && hits === query.length);
+type ArticleInfo = { titleTerms: Set<string>; isIndex: boolean };
+
+function articleInfo(index: Passage[]): Map<string, ArticleInfo> {
+  const parts = new Map<string, { title: string; texts: string[] }>();
+  for (const passage of index) {
+    const article = parts.get(passage.articleId);
+    if (article) article.texts.push(passage.text);
+    else
+      parts.set(passage.articleId, {
+        title: passage.title,
+        texts: [passage.text],
+      });
+  }
+  const info = new Map<string, ArticleInfo>();
+  for (const [id, { title, texts }] of parts)
+    info.set(id, {
+      titleTerms: new Set(tokenize(title)),
+      isIndex: looksLikeIndexArticle(title, texts.join("\n")),
+    });
+  return info;
 }
 
-function indexScale(
-  title: string,
-  text: string,
-  query: string[],
-  titleTerms: Set<string>,
-): number {
-  if (!looksLikeIndexArticle(title, text)) return 1;
-  return titleHeavy(query, titleTerms) ? 1 : INDEX_SCORE_SCALE;
+function indexScale(article: ArticleInfo, concepts: string[][]): number {
+  if (!article.isIndex) return 1;
+  const titleHits = concepts.filter((variants) =>
+    variants.some((term) => article.titleTerms.has(term)),
+  ).length;
+  const titleHeavy =
+    titleHits >= 2 || (titleHits > 0 && titleHits === concepts.length);
+  return titleHeavy ? 1 : INDEX_SCORE_SCALE;
 }
 
 function enoughOverlap(
-  matches: number,
-  queryLength: number,
-  matched: string[],
-  frequency: Map<string, number>,
+  matched: number[],
+  concepts: string[][],
+  conceptFrequency: number[],
   n: number,
+  bodyTokens: string[],
 ): boolean {
-  if (!matches) return false;
-  if (matches >= 2 && matches / queryLength >= 0.25) return true;
-  return matched.some((term) => isDistinctive(frequency.get(term) ?? 0, n));
+  const all = concepts.map((_, position) => position);
+  const gating = all.filter(
+    (position) => !concepts[position]!.every((term) => MODIFIERS.has(term)),
+  );
+  // Date-only (or modifier-only) questions never open the gate.
+  if (!gating.length) return false;
+  const hits = matched.filter((position) => gating.includes(position));
+  const q = gating.length;
+  if (!hits.length) return false;
+  if (hits.length >= Math.min(2, q) && hits.length / q >= 0.25) return true;
+  // One distinctive body word can carry a two-word question whose other word
+  // never appears: a paraphrase such as "clear the cache". Date words do not
+  // create that pair, and a title-only hit is not enough.
+  const hit = hits[0]!;
+  return (
+    q === 2 &&
+    all.length === q &&
+    hits.length === 1 &&
+    isDistinctive(conceptFrequency[hit]!, n) &&
+    gating.every(
+      (position) => hits.includes(position) || conceptFrequency[position] === 0,
+    ) &&
+    concepts[hit]!.some((term) => bodyTokens.includes(term))
+  );
 }
 
 function termScore(
@@ -141,6 +189,40 @@ function termScore(
     (count * 2.2) /
     (count + 1.2 * (0.25 + (0.75 * docLen) / averageLength));
   return idf * normalized + (titleBoost ? 0.55 : 0);
+}
+
+/** Scores the best-matching variant of each concept; `matched` lists concept positions. */
+function scoreConcepts(
+  tokens: string[],
+  concepts: string[][],
+  idf: Map<string, number>,
+  averageLength: number,
+  titleTerms: Set<string>,
+): { score: number; matched: number[] } {
+  let score = 0;
+  const matched: number[] = [];
+  concepts.forEach((variants, position) => {
+    let best = 0;
+    for (const term of variants) {
+      const count = tokens.filter((t) => t === term).length;
+      if (count)
+        best = Math.max(
+          best,
+          termScore(
+            count,
+            idf.get(term)!,
+            tokens.length,
+            averageLength,
+            titleTerms.has(term),
+          ),
+        );
+    }
+    if (best > 0) {
+      matched.push(position);
+      score += best;
+    }
+  });
+  return { score, matched };
 }
 
 export function buildIndex(library: Library): Passage[] {
@@ -173,8 +255,8 @@ export function buildIndex(library: Library): Passage[] {
 type ScoredRow = {
   passage: Passage;
   tokens: string[];
-  matched: string[];
-  gated: boolean;
+  bodyTokens: string[];
+  matched: number[];
 };
 
 export function search(
@@ -182,149 +264,134 @@ export function search(
   question: string,
   limit = 3,
 ): Passage[] {
-  const query = expandQuery([...new Set(tokenize(question))]);
-  if (!query.length || !index.length) return [];
+  const concepts = queryConcepts([...new Set(tokenize(question))]);
+  if (!concepts.length || !index.length) return [];
   const tokens = index.map((p) => tokenize(p.title + " " + p.text));
+  const bodyTokens = index.map((p) => tokenize(p.text));
   const averageLength =
     tokens.reduce((sum, ts) => sum + ts.length, 0) / tokens.length || 1;
   const n = index.length;
-  const frequency = new Map(
-    query.map((term) => [
-      term,
-      tokens.filter((ts) => ts.includes(term)).length,
-    ]),
+  const idf = new Map(
+    concepts
+      .flat()
+      .map((term) => [
+        term,
+        termIdf(tokens.filter((ts) => ts.includes(term)).length, n),
+      ]),
   );
-  const idfFor = (term: string) => termIdf(frequency.get(term)!, n);
+  const conceptFrequency = concepts.map(
+    (variants) =>
+      tokens.filter((ts) => variants.some((term) => ts.includes(term))).length,
+  );
+  const articles = articleInfo(index);
   const scored: ScoredRow[] = index.map((passage, i) => {
     const ts = tokens[i]!;
-    const titleTerms = new Set(tokenize(passage.title));
-    let score = 0;
-    const matched: string[] = [];
-    for (const term of query) {
-      const count = ts.filter((t) => t === term).length;
-      if (!count) continue;
-      matched.push(term);
-      score += termScore(
-        count,
-        idfFor(term),
-        ts.length,
-        averageLength,
-        titleTerms.has(term),
-      );
-    }
+    const { score, matched } = scoreConcepts(
+      ts,
+      concepts,
+      idf,
+      averageLength,
+      articles.get(passage.articleId)!.titleTerms,
+    );
     return {
       passage: { ...passage, score },
       tokens: ts,
+      bodyTokens: bodyTokens[i]!,
       matched,
-      gated: false,
     };
   });
-  const articleMatches = new Map<string, Set<string>>();
+  const articleMatches = new Map<string, Set<number>>();
   for (const row of scored) {
     let seen = articleMatches.get(row.passage.articleId);
     if (!seen) {
       seen = new Set();
       articleMatches.set(row.passage.articleId, seen);
     }
-    for (const term of row.matched) seen.add(term);
+    for (const position of row.matched) seen.add(position);
   }
+  const hits: Passage[] = [];
   for (const row of scored) {
-    const titleTerms = new Set(tokenize(row.passage.title));
+    if (!row.matched.length) continue;
     row.passage.score +=
-      ARTICLE_COVERAGE * (articleMatches.get(row.passage.articleId)?.size ?? 0);
+      ARTICLE_COVERAGE * articleMatches.get(row.passage.articleId)!.size;
     row.passage.score *= indexScale(
-      row.passage.title,
-      row.passage.text,
-      query,
-      titleTerms,
+      articles.get(row.passage.articleId)!,
+      concepts,
     );
-    row.gated = enoughOverlap(
-      row.matched.length,
-      query.length,
-      row.matched,
-      frequency,
-      n,
-    );
+    if (
+      enoughOverlap(
+        row.matched,
+        concepts,
+        conceptFrequency,
+        n,
+        row.bodyTokens,
+      )
+    )
+      hits.push(row.passage);
   }
-  const hits = scored
-    .filter((row) => row.gated && row.passage.score > 0)
-    .map((row) => row.passage)
-    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  hits.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   if (hits.length) return hits.slice(0, Math.max(0, limit));
   return articleFallback(
     scored,
-    query,
-    frequency,
+    concepts,
+    conceptFrequency,
     n,
     averageLength,
-    idfFor,
+    idf,
+    articles,
     limit,
   );
 }
 
 function articleFallback(
   scored: ScoredRow[],
-  query: string[],
-  frequency: Map<string, number>,
+  concepts: string[][],
+  conceptFrequency: number[],
   n: number,
   averageLength: number,
-  idfFor: (term: string) => number,
+  idf: Map<string, number>,
+  articles: Map<string, ArticleInfo>,
   limit: number,
 ): Passage[] {
-  const byArticle = new Map<
-    string,
-    { title: string; texts: string[]; rows: ScoredRow[] }
-  >();
+  const byArticle = new Map<string, ScoredRow[]>();
   for (const row of scored) {
-    const id = row.passage.articleId;
-    let group = byArticle.get(id);
-    if (!group) {
-      group = { title: row.passage.title, texts: [], rows: [] };
-      byArticle.set(id, group);
-    }
-    group.rows.push(row);
-    group.texts.push(row.passage.text);
+    const rows = byArticle.get(row.passage.articleId);
+    if (rows) rows.push(row);
+    else byArticle.set(row.passage.articleId, [row]);
   }
   let bestId = "";
   let bestScore = 0;
-  for (const [articleId, group] of byArticle) {
-    const combined = group.rows.flatMap((row) => row.tokens);
-    const titleTerms = new Set(tokenize(group.title));
-    let score = 0;
-    const matched: string[] = [];
-    for (const term of query) {
-      const count = combined.filter((t) => t === term).length;
-      if (!count) continue;
-      matched.push(term);
-      score += termScore(
-        count,
-        idfFor(term),
-        combined.length,
-        averageLength,
-        titleTerms.has(term),
-      );
-    }
-    score += ARTICLE_COVERAGE * matched.length;
-    score *= indexScale(
-      group.title,
-      group.texts.join("\n"),
-      query,
-      titleTerms,
+  for (const [articleId, rows] of byArticle) {
+    const article = articles.get(articleId)!;
+    const { score, matched } = scoreConcepts(
+      rows.flatMap((row) => row.tokens),
+      concepts,
+      idf,
+      averageLength,
+      article.titleTerms,
     );
     if (
-      !enoughOverlap(matched.length, query.length, matched, frequency, n) ||
-      score <= 0
+      !enoughOverlap(
+        matched,
+        concepts,
+        conceptFrequency,
+        n,
+        rows.flatMap((row) => row.bodyTokens),
+      )
     )
       continue;
-    if (score > bestScore || (score === bestScore && articleId < bestId)) {
-      bestScore = score;
+    const total =
+      (score + ARTICLE_COVERAGE * matched.length) *
+      indexScale(article, concepts);
+    if (total > bestScore || (total === bestScore && articleId < bestId)) {
+      bestScore = total;
       bestId = articleId;
     }
   }
   if (!bestId) return [];
   return byArticle
     .get(bestId)!
-    .rows.filter((row) => row.passage.score > 0)
+    .filter((row) => row.matched.length > 0)
     .map((row) => row.passage)
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
     .slice(0, Math.max(0, limit));

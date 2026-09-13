@@ -44,13 +44,17 @@ function assertHit(
   library: Library,
   item: EvalCase,
   label: string,
+  note: (message: string) => void,
 ): { articleId: string; ms: number } | undefined {
   const started = performance.now();
   const allowed = expectedIds(library, item);
   const hits = search(buildIndex(library), item.question, 3);
   const ms = performance.now() - started;
   if (!hits.length) {
-    if (item.optional) return undefined;
+    if (item.optional) {
+      note(`${label} ${item.id}: optional case found no evidence`);
+      return undefined;
+    }
     assert.fail(
       `${label} ${item.id}: no evidence for ${JSON.stringify(item.question)}`,
     );
@@ -60,7 +64,10 @@ function assertHit(
   }
   const rank = hits.findIndex((hit) => allowed.includes(hit.articleId));
   if (rank !== 0) {
-    if (item.optional && rank === -1) return undefined;
+    if (item.optional && rank === -1) {
+      note(`${label} ${item.id}: optional case missed ${allowed.join("|")}`);
+      return undefined;
+    }
     assert.fail(
       `${label} ${item.id}: expected ${allowed.join("|")} first, got ${hits
         .slice(0, 3)
@@ -71,10 +78,10 @@ function assertHit(
   return { articleId: hits[rank]!.articleId, ms };
 }
 
-test("sample library eval questions hit the intended articles", () => {
+test("sample library eval questions hit the intended articles", (t) => {
   const library = loadLibrary("../public/knowledge/starter.json");
   for (const item of cases.sample as EvalCase[]) {
-    assertHit(library, item, "sample");
+    assertHit(library, item, "sample", (message) => t.diagnostic(message));
   }
 });
 
@@ -88,13 +95,15 @@ const optionalCorpusPresent = existsSync(optionalCorpusPath);
 test(
   "optional local corpus eval questions hit procedure articles when present",
   { skip: !optionalCorpusPresent },
-  () => {
+  (t) => {
     const library = validateLibrary(
       JSON.parse(readFileSync(optionalCorpusPath, "utf8")),
     );
     let slowest = 0;
     for (const item of cases.fd24 as EvalCase[]) {
-      const result = assertHit(library, item, "optional-corpus");
+      const result = assertHit(library, item, "optional-corpus", (message) =>
+        t.diagnostic(message),
+      );
       if (result) slowest = Math.max(slowest, result.ms);
       const hits = search(buildIndex(library), item.question);
       const top = library.documents.find(
