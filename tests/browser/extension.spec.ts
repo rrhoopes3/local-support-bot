@@ -169,6 +169,14 @@ test("welcome layout at narrow side-panel width", async () => {
     path: "artifacts/extension-welcome.png",
     fullPage: true,
   });
+  await page.getByRole("button", { name: "Can I use this offline?" }).click();
+  await expect(page.locator(".message.assistant")).toHaveAttribute(
+    "data-mode",
+    "excerpts",
+  );
+  await expect(page.locator(".source-card").first()).toContainText(
+    "Local models and offline answers",
+  );
 });
 
 test("Stop cancels model loading and restores the search controls", async () => {

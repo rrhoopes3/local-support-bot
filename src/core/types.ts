@@ -34,6 +34,15 @@ export interface Answer {
   note?: string;
 }
 export type ChatMessage = { role: "system" | "user"; content: string };
+export type GenerateFailureKind = "length" | "unavailable" | "failed";
+export class GenerateError extends Error {
+  readonly kind: GenerateFailureKind;
+  constructor(kind: GenerateFailureKind, message: string) {
+    super(message);
+    this.name = "GenerateError";
+    this.kind = kind;
+  }
+}
 export interface Generator {
   generate(
     messages: ChatMessage[],

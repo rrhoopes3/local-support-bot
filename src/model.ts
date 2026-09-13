@@ -7,7 +7,7 @@ import {
   type InitProgressReport,
 } from "@mlc-ai/web-llm";
 import modelOptions from "../models.json";
-import type { ChatMessage, Generator } from "./core/types";
+import { GenerateError, type ChatMessage, type Generator } from "./core/types";
 
 export const MODELS = modelOptions;
 export function makeAppConfig(): AppConfig {
@@ -26,6 +26,31 @@ export function makeAppConfig(): AppConfig {
       };
     }),
   };
+}
+
+export const GENERATION_LENGTH_ERROR = "The answer exceeded its budget.";
+
+/** Keep the GPU session after truncated/failed generate; release on abort, crash, or timeout. */
+export function shouldReleaseAfterGenerateFailure(
+  error: unknown,
+  signal?: AbortSignal,
+): boolean {
+  if (signal?.aborted) return true;
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  if (error instanceof GenerateError) return false;
+  const message = error instanceof Error ? error.message : "";
+  return (
+    message.includes("model worker stopped") || message.includes("timed out")
+  );
+}
+
+export function contentFromCompletion(
+  finishReason: string | undefined,
+  content: string | null | undefined,
+): string {
+  if (finishReason === "length")
+    throw new GenerateError("length", GENERATION_LENGTH_ERROR);
+  return content || "";
 }
 
 /** Dedicated worker per panel. Closing the panel releases the GPU; cached weights persist. */
@@ -71,7 +96,7 @@ export class LocalModel implements Generator {
     sourceIds: string[] = [],
   ): Promise<string> {
     if (!this.ready || !this.engine || !this.worker)
-      throw new Error("Load a model first.");
+      throw new GenerateError("unavailable", "Load a model first.");
     const engine = this.engine;
     try {
       const result = await this.bounded(
@@ -92,11 +117,12 @@ export class LocalModel implements Generator {
         signal,
         90_000,
       );
-      if (result.choices[0]?.finish_reason === "length")
-        throw new Error("The answer exceeded its budget.");
-      return result.choices[0]?.message.content || "";
+      return contentFromCompletion(
+        result.choices[0]?.finish_reason,
+        result.choices[0]?.message.content,
+      );
     } catch (error) {
-      this.release();
+      if (shouldReleaseAfterGenerateFailure(error, signal)) this.release();
       throw error;
     }
   }

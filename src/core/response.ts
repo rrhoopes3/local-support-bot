@@ -25,6 +25,17 @@ export function responseSchema(sourceIds: string[]): string {
     additionalProperties: false,
   });
 }
+/** Drop copied http(s)/www addresses; keep the surrounding claim. */
+export function stripInlineUrls(text: string): string {
+  return text
+    .replace(/https?:\/\/[^\s<>[\]()]+/gi, " ")
+    .replace(/\bwww\.[^\s<>[\]()]+/gi, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+}
+
 /** Source identity is validated separately from the truth of the generated claim. */
 export function decodeModelResponse(
   raw: string,
@@ -52,7 +63,9 @@ export function decodeModelResponse(
         !allowed.has(statement.sourceId)
       )
         return null;
-      statements.push(statement.text.trim() + " [" + statement.sourceId + "]");
+      const claim = stripInlineUrls(statement.text.trim());
+      if (!claim) return null;
+      statements.push(claim + " [" + statement.sourceId + "]");
     }
     return statements.join("\n\n");
   } catch {

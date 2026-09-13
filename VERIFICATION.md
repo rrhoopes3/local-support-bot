@@ -1,8 +1,8 @@
 # Scaffold verification — 2026-09-13
 
 - TypeScript: passed.
-- Core behavior: 11 tests passed (retrieval, grounded context, structured source IDs, citation checks, fallback, cancellation, and import validation).
-- Packaged extension: 5 Chromium tests passed (real MV3 load, local storage, import, inert text rendering, no initial external requests, model failure recovery, cancellation, narrow layout).
+- Core behavior: 26 tests passed (verb stemming including charge/decline/create, weather not over-stemmed, tighter overlap gating, add vs remove tax, add↔create ranking, welcome-chip phrasing, grounded context, structured source IDs, URL stripping from statements, typed generate-failure notes, cancellation, import validation, and the checked-in retrieval eval).
+- Packaged extension: 5/5 Chromium tests passed (real MV3 load, local storage, import, inert text rendering, no initial external requests, model failure recovery, cancellation, narrow layout, and the offline welcome chip returning Local models evidence).
 - Qwen3 0.6B q4f32: loaded successfully and generated source-linked statements on the host NVIDIA Ampere GPU.
 - Offline: cached model reloaded and generated a cited answer with Chromium networking disabled.
 - Browser/model smoke runs reported no page errors.

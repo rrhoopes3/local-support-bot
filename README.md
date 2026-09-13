@@ -1,6 +1,6 @@
 # LocalSupBot
 
-A standalone Chrome Manifest V3 side-panel extension for answering support questions from a local knowledge library. Articles stay in extension storage. Optional Qwen inference runs on the user's GPU through WebLLM, in a dedicated worker.
+A standalone Chrome Manifest V3 side panel that answers support questions from a local knowledge library. Articles live in extension storage. Retrieval is local BM25 with light stemming. Optional Qwen3 inference runs on the user's GPU through WebLLM in a dedicated worker, constrained to JSON statements with source IDs that are checked before rendering. Nothing leaves the machine except the one-time model download.
 
 ## Load the scaffold
 
@@ -39,13 +39,13 @@ Knowledge is stored in `chrome.storage.local`, not synchronized to a cloud accou
 
 ## Answer behavior
 
-1. Local BM25-style lexical retrieval selects up to three passages, each no more than 900 characters.
-2. Without sufficient word overlap, return a no-evidence response without calling the model.
+1. Local BM25-style lexical retrieval selects up to three passages, each no more than 900 characters. Query and passage tokens share a cheap suffix stemmer (`s`/`es`/`ed`/`ing`, a trailing `e` so `charge` meets `charged`, and `or` so `process` meets `processor`).
+2. A passage can pass with two overlapping terms or one distinctive term (about 10% document frequency and a minimum IDF). If no passage passes, fall back to the best article-level score so terms split across 900-character chunks can still retrieve. Walkthrough catalogs and other index-only articles are downranked so procedures win. Off-topic questions return no evidence and never call the model.
 3. If a model is loaded, pass only the question, selected passages, and fixed grounding instructions.
-4. Constrain generation to JSON statements with allowed source IDs. Validate each statement, render the citations in code, and reject model-created links or repeated paragraphs.
-5. If generation fails, times out, refuses, or fails citation checks, show the actual passages.
+4. Constrain generation to JSON statements with allowed source IDs. Validate each statement, render the citations in code, and reject model-created markdown/HTML/`javascript:` links or repeated paragraphs. Copied `http(s)` / `www.` addresses are stripped from shown text; clickable source URLs still come only from library metadata.
+5. If generation is truncated, refuses, or fails citation checks, show the actual passages and keep the loaded model. A length-cap note says the answer was cut off; other generate failures do not claim the model was unloaded. Stop, a worker crash, or a timeout still releases the worker.
 
-Citation checks establish source identity and formatting; they **do not prove that a model's claims follow from the sources**. This scaffold needs a PMS-specific evaluation set before production. Lexical search can miss paraphrases. Semantic retrieval/reranking is a future provider extension.
+Citation checks establish source identity and formatting; they **do not prove that a model's claims follow from the sources**. `tests/eval-questions.json` is the checked-in retrieval eval for the sample library and, when present, `artifacts/fd24-library.json`. Lexical search can still miss paraphrases. Semantic retrieval/reranking is a future provider extension.
 
 The extension has no content script and cannot read or alter the host page. It cannot execute PMS actions or launch WebSupBot walkthrough overlays. Those integrations are explicit future extension points.
 
@@ -59,7 +59,7 @@ The extension has no content script and cannot read or alter the host page. It c
 - Model requests download public files; prompts and article contents are never uploaded by the application.
 - This is an unpacked development scaffold. Chrome Web Store review/publishing is not part of this repository setup.
 
-The model worker has load/generation timeouts, error handling, and cancellation. A load can be stopped immediately. A stopped or failed generation releases the worker; the next load normally reuses cached weights.
+The model worker has load/generation timeouts, error handling, and cancellation. A load can be stopped immediately. Stopping generation, a worker crash, or a timeout releases the worker; the next load normally reuses cached weights. A truncated or otherwise failed generation keeps the GPU session and falls back to source excerpts.
 
 ## Development and verification
 
@@ -71,6 +71,8 @@ npx playwright install chromium
 npm run test:browser
 npm run preview
 ```
+
+`npm test` includes `tests/eval-questions.json`: sample-library paraphrases always run. Optional local-corpus questions and title self-retrieval run when `artifacts/fd24-library.json` is present and skip when it is not. Expected optional-corpus hits are resolved from titles in that gitignored file, not from checked-in article IDs.
 
 Preview serves the same panel at `http://127.0.0.1:4173/panel.html` with the extension's CSP. It uses browser localStorage in place of Chrome extension storage and does not test toolbar integration.
 
@@ -98,7 +100,7 @@ The smoke script writes `artifacts/model-smoke.json` and a screenshot. It exits 
 | `models.json`             | Allowed model IDs and local runtime paths                           |
 | `vendor/models.lock.json` | Pinned runtime provenance and checksums                             |
 | `scripts/`                | Build, runtime vendoring, KB export, preview, model smoke test      |
-| `tests/`                  | Core behavior and actual extension tests                            |
+| `tests/`                  | Core behavior, retrieval eval, and actual extension tests           |
 
 ## Next integrations
 

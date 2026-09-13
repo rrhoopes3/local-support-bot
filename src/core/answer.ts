@@ -1,12 +1,13 @@
-import { decodeModelResponse } from "./response";
+import { decodeModelResponse, stripInlineUrls } from "./response";
 import { buildIndex, search } from "./retrieval";
-import type {
-  Answer,
-  ChatMessage,
-  Citation,
-  Generator,
-  Library,
-  Passage,
+import {
+  GenerateError,
+  type Answer,
+  type ChatMessage,
+  type Citation,
+  type Generator,
+  type Library,
+  type Passage,
 } from "./types";
 
 export const MAX_QUESTION_CHARS = 500;
@@ -62,15 +63,18 @@ export function validateGeneratedAnswer(
   raw: string,
   citations: Citation[],
 ): string | null {
-  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   if (
     !text ||
     /<think>|INSUFFICIENT_EVIDENCE/i.test(text) ||
     text.length > 2400
   )
     return null;
-  // The model does not get to manufacture links. Source URLs are rendered from library metadata.
-  if (/https?:\/\/|\]\(|javascript:|<\/?[a-z]/i.test(text)) return null;
+  // Clickable sources come from library metadata. Strip copied http(s)/www
+  // addresses; reject javascript:, markdown links, and HTML tags.
+  if (/javascript:|\]\(|<\/?[a-z]/i.test(text)) return null;
+  text = stripInlineUrls(text);
+  if (!text) return null;
   const allowed = new Set(citations.map((c) => c.id));
   const ids = [...text.matchAll(/\[([A-Za-z]+\d+)\]/g)].map((m) => m[1]!);
   if (!ids.length || ids.some((id) => !allowed.has(id))) return null;
@@ -131,9 +135,14 @@ export async function answerQuestion(
     };
   } catch (error) {
     if (signal?.aborted) throw error;
-    return extractiveAnswer(
-      citations,
-      "The local model was unavailable. Showing the source passages.",
-    );
+    return extractiveAnswer(citations, noteForGenerateFailure(error));
   }
+}
+
+function noteForGenerateFailure(error: unknown): string {
+  if (error instanceof GenerateError && error.kind === "length")
+    return "The answer was cut off. Showing the source passages.";
+  if (error instanceof GenerateError && error.kind === "unavailable")
+    return "The local model was unavailable. Showing the source passages.";
+  return "The model could not finish this answer. Showing the source passages.";
 }
