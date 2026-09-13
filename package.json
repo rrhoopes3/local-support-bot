@@ -1,0 +1,33 @@
+{
+  "name": "localsupbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Chrome support assistant with local retrieval and on-device WebLLM inference",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup:models": "node scripts/vendor-models.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:browser": "playwright test",
+    "check": "npm run typecheck && npm test && npm run build",
+    "preview": "node scripts/preview.mjs",
+    "import:kb": "node scripts/import-kb.mjs",
+    "smoke:model": "node scripts/smoke-model.mjs"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "0.2.85"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/chrome": "0.2.9",
+    "@types/node": "26.5.1",
+    "esbuild": "0.28.2",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  }
+}

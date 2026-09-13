@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.cache/
+playwright-report/
+test-results/
+artifacts/
+*.log
+.env*
+!.env.example
+vendor/models/*.wasm
