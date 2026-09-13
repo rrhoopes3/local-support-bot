@@ -1,0 +1,67 @@
+{
+  "sample": [
+    {
+      "id": "import-articles",
+      "question": "How do I import support articles?",
+      "acceptableIds": ["import-articles"]
+    },
+    {
+      "id": "offline-model",
+      "question": "Can I use the model offline?",
+      "acceptableIds": ["local-model"]
+    },
+    {
+      "id": "offline-assistant",
+      "question": "Can I use this assistant offline?",
+      "acceptableIds": ["local-model"]
+    },
+    {
+      "id": "import-docs",
+      "question": "how to add my documentation",
+      "acceptableIds": ["import-articles"]
+    },
+    {
+      "id": "clear-cache",
+      "question": "clear the cache",
+      "acceptableIds": ["local-model"]
+    },
+    {
+      "id": "max-article-size",
+      "question": "what is the maximum article size",
+      "acceptableIds": ["import-articles"],
+      "optional": true
+    },
+    {
+      "id": "without-internet",
+      "question": "does it work without internet",
+      "acceptableIds": ["local-model"]
+    }
+  ],
+  "fd24": [
+    {
+      "id": "refund",
+      "question": "How do I process a refund?",
+      "titleNeedles": ["payment", "folio"]
+    },
+    {
+      "id": "group-booking",
+      "question": "how do I make a group booking",
+      "titleNeedles": ["integration"]
+    },
+    {
+      "id": "declined-card",
+      "question": "what do I do if the credit card is declined",
+      "titleNeedles": ["payment", "folio", "kiosk"]
+    },
+    {
+      "id": "check-in",
+      "question": "How do I check in a guest?",
+      "titleNeedles": ["kiosk", "check-in"]
+    },
+    {
+      "id": "post-charge",
+      "question": "how do I post a charge",
+      "titleNeedles": ["payment", "folio", "frequently"]
+    }
+  ]
+}

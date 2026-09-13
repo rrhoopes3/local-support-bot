@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "LocalSupBot",
+  "version": "0.1.0",
+  "description": "Search your support articles and answer questions with an on-device model.",
+  "minimum_chrome_version": "120",
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": [
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*",
+    "https://*.hf.co/*",
+    "https://*.xethub.hf.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open LocalSupBot"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; style-src 'self'; img-src 'self' data:; base-uri 'none'"
+  }
+}

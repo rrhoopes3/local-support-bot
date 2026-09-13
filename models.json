@@ -1,0 +1,14 @@
+[
+  {
+    "id": "Qwen3-0.6B-q4f32_1-MLC",
+    "label": "Qwen3 0.6B · compact",
+    "vramMB": 1925,
+    "wasmPath": "models/qwen3-0.6b.wasm"
+  },
+  {
+    "id": "Qwen3-1.7B-q4f32_1-MLC",
+    "label": "Qwen3 1.7B · balanced",
+    "vramMB": 2636,
+    "wasmPath": "models/qwen3-1.7b.wasm"
+  }
+]

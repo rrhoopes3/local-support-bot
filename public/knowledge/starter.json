@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "Sample workspace",
+  "documents": [
+    {
+      "id": "import-articles",
+      "title": "Importing support articles",
+      "text": "# Importing support articles\n\nChoose Import articles in the knowledge library. Select Markdown (.md) or plain text (.txt) files, or one JSON library. Import replaces the current library; export it first if you want to keep a copy.\n\nThe library supports up to 100 articles totaling 2 MB. Each article can contain up to 60,000 characters. Articles are saved in this browser's extension storage and are not sent to a server.\n\nThese sample articles describe LocalSupBot. Import your own approved PMS documentation before using it for property support."
+    },
+    {
+      "id": "local-model",
+      "title": "Local models and offline answers",
+      "text": "# Local models and offline answers\n\nArticle search works immediately without downloading a language model. Click Load model to download the selected Qwen model weights from Hugging Face. Generation runs on this device through WebGPU.\n\nAfter a successful download, cached weights can be reused offline while browser storage remains available. Closing the panel releases GPU memory. Reopening the panel requires loading the model again, normally from cache.\n\nThe compact model uses Qwen3 0.6B. The balanced option uses Qwen3 1.7B. If the browser cannot run WebGPU, keep using local article search. Remove selected model cache deletes downloaded files for the selected model."
+    },
+    {
+      "id": "answer-sources",
+      "title": "Checking answers and sources",
+      "text": "# Checking answers and sources\n\nAsk a specific question using words from your support articles. LocalSupBot searches a few relevant passages, then uses a loaded model to compose an answer. Without a model, it displays the matching passages directly.\n\nExpand a source card to read the cited passage. A citation identifies an article; it does not prove that every claim in a generated answer is correct. Verify the answer against the article before following it.\n\nEach question is answered independently. The assistant does not read the host website or operate the PMS. It cannot change reservations, issue refunds, run reports, or perform walkthrough overlays. A question with no matching evidence returns a no-evidence response."
+    }
+  ]
+}

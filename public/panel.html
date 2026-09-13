@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>LocalSupBot · Your support, on device</title>
+    <link rel="stylesheet" href="panel.css" />
+    <script type="module" src="panel.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">L<span>↗</span></span>
+          <div>
+            <strong>LocalSupBot</strong
+            ><span class="subtitle">YOUR SUPPORT, ON DEVICE</span>
+          </div>
+        </div>
+        <span class="local-badge"><span aria-hidden="true">●</span> Local</span>
+      </header>
+      <div class="workspace">
+        <section class="engine-card" aria-label="Local model">
+          <div class="card-heading">
+            <span class="eyebrow">ANSWER ENGINE</span
+            ><span id="model-state" class="state">Search ready</span>
+          </div>
+          <label class="sr-only" for="model-select">Local model</label>
+          <div class="model-row">
+            <select id="model-select"></select
+            ><button id="load-model" class="button primary">Load model</button
+            ><button id="cancel-load" class="button" hidden>Stop</button>
+          </div>
+          <p id="model-info" class="muted"></p>
+          <progress
+            id="load-progress"
+            max="1"
+            value="0"
+            hidden
+            aria-label="Model download progress"
+          ></progress>
+          <p id="model-status" class="status" role="status">
+            Search works now. Load a model for composed answers.
+          </p>
+          <details class="model-details">
+            <summary>Model storage & privacy</summary>
+            <p>
+              Questions and articles stay in this browser. Loading a model
+              downloads its weights from Hugging Face. Cached weights can be
+              reused offline while browser storage remains available.
+            </p>
+            <p>
+              Closing this panel releases model memory. Reloading a cached model
+              still takes a moment.
+            </p>
+            <div class="actions">
+              <button id="unload-model" class="button subtle">
+                Release memory</button
+              ><button id="clear-cache" class="button subtle">
+                Remove selected model cache
+              </button>
+            </div>
+          </details>
+        </section>
+        <section class="knowledge-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">KNOWLEDGE LIBRARY</span>
+              <h2 id="library-name">Loading articles…</h2>
+            </div>
+            <span id="article-count" class="count">0</span>
+          </div>
+          <div class="library-actions">
+            <label class="button" for="import-files">＋ Import articles</label
+            ><input
+              id="import-files"
+              type="file"
+              accept=".md,.txt,.json"
+              multiple
+              class="sr-only"
+            /><button id="export-library" class="button subtle">Export</button>
+          </div>
+          <p class="muted">
+            Markdown, text, or a library JSON. Import replaces the current
+            library.
+          </p>
+          <p id="library-status" class="status" role="status"></p>
+          <details class="article-details">
+            <summary>Browse articles</summary>
+            <div id="article-list"></div>
+            <button id="restore-demo" class="button subtle">
+              Restore sample library
+            </button>
+          </details>
+        </section>
+        <section class="conversation-section" aria-label="Support conversation">
+          <div class="section-heading">
+            <span class="eyebrow">ASK YOUR ARTICLES</span
+            ><button id="clear-chat" class="text-button">Clear chat</button>
+          </div>
+          <div
+            id="conversation"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+          >
+            <div id="welcome" class="welcome">
+              <div class="welcome-symbol" aria-hidden="true">✳</div>
+              <h1>A little help.<br />Right here.</h1>
+              <p>
+                Find the right passage. Get an answer with sources you can open.
+              </p>
+              <div class="suggestions">
+                <button
+                  class="suggestion"
+                  data-question="How do I import support articles?"
+                >
+                  How do I import articles? <span aria-hidden="true">↗</span>
+                </button>
+                <button
+                  class="suggestion"
+                  data-question="Can I use this assistant offline?"
+                >
+                  Can I use this offline? <span aria-hidden="true">↗</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <form id="ask-form" class="composer">
+        <label class="sr-only" for="question">Ask a support question</label>
+        <textarea
+          id="question"
+          placeholder="Ask a support question…"
+          rows="2"
+          maxlength="500"
+          required
+        ></textarea>
+        <div class="composer-footer">
+          <span id="answer-mode">Local search · sources included</span
+          ><button id="stop-answer" class="button" type="button" hidden>
+            Stop</button
+          ><button
+            id="send"
+            class="send-button"
+            type="submit"
+            aria-label="Send question"
+          >
+            ↑
+          </button>
+        </div>
+      </form>
+      <footer class="footnote">
+        Answers can be wrong. Check the cited article.<br />Each question is
+        answered independently.
+      </footer>
+    </main>
+  </body>
+</html>

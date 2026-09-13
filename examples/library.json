@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "My PMS knowledge",
+  "documents": [
+    {
+      "id": "example-article",
+      "title": "Replace with an approved article",
+      "text": "Replace this text with the published steps for your PMS workflow.",
+      "sourceUrl": "https://example.com/help/article",
+      "updatedAt": "2026-09-13"
+    }
+  ]
+}

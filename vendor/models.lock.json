@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "webllmVersion": "0.2.85",
+  "binaryRevision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4",
+  "models": [
+    {
+      "id": "Qwen3-0.6B-q4f32_1-MLC",
+      "file": "qwen3-0.6b.wasm",
+      "url": "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base/Qwen3-0.6B-q4f32_1_cs1k-webgpu.wasm",
+      "sha256": "361f1310ae616863bccbc638f075f7484816b45eb30ffecf08539272a1b2ae1e",
+      "bytes": 5419279
+    },
+    {
+      "id": "Qwen3-1.7B-q4f32_1-MLC",
+      "file": "qwen3-1.7b.wasm",
+      "url": "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base/Qwen3-1.7B-q4f32_1_cs1k-webgpu.wasm",
+      "sha256": "a80ca0d245ed9ce492497918afd21ec1d43dd3873b63591255b01bd9c41adf65",
+      "bytes": 5444872
+    }
+  ]
+}
