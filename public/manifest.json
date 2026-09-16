@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "LocalSupBot",
+  "short_name": "LocalSupBot",
   "version": "0.1.0",
-  "description": "Search your support articles and answer questions with an on-device model.",
+  "description": "Search local support articles in a side panel. Optional on-device answers with Qwen3.",
   "minimum_chrome_version": "120",
   "permissions": ["sidePanel", "storage"],
   "host_permissions": [

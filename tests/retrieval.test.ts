@@ -267,6 +267,95 @@ test("add/create synonyms count as one question word", () => {
     "room types never mention reports",
   );
 });
+test("a leftover noun plus a distinctive library term does not open the gate", () => {
+  const index = buildIndex(sample);
+  for (const question of [
+    "what time is it in WebGPU",
+    "what time is it for Qwen",
+    "WebGPU price",
+    "history of WebGPU",
+    "who invented Qwen",
+    "pasta WebGPU",
+    "clock WebGPU",
+    "weather WebGPU",
+  ])
+    assert.deepEqual(search(index, question), [], question);
+  assert.equal(search(index, "clear the cache")[0]?.articleId, "local-model");
+});
+test("time leftover plus a distinctive ops noun is not coverage", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "folio-time",
+    documents: [
+      {
+        id: "folio",
+        title: "Guest folio",
+        text: "Open the folio to review charges, payments, and refunds.",
+      },
+      ...Array.from({ length: 10 }, (_, i) => ({
+        id: "other-" + i,
+        title: "Other " + i,
+        text: "Housekeeping rooms keys night audit reservations.",
+      })),
+    ],
+  };
+  const index = buildIndex(library);
+  assert.deepEqual(search(index, "what time is it in folio"), []);
+  assert.equal(search(index, "folio")[0]?.articleId, "folio");
+});
+test("clock questions stay empty even when time and a library noun co-occur", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "clock",
+    documents: [
+      {
+        id: "folio",
+        title: "Guest folio",
+        text: "Open the folio at any time to review charges, payments, and refunds.",
+      },
+      {
+        id: "check-in",
+        title: "Check-in time",
+        text: "Check-in time is 3:00 PM. Guests may arrive after that time.",
+      },
+    ],
+  };
+  const index = buildIndex(library);
+  assert.deepEqual(search(index, "what time is it in folio"), []);
+  assert.deepEqual(search(index, "what's the time in folio"), []);
+  assert.equal(search(index, "what time is check-in")[0]?.articleId, "check-in");
+  assert.equal(search(index, "folio")[0]?.articleId, "folio");
+});
+test("article-size paraphrases match a character-limit passage", () => {
+  const library: Library = {
+    schemaVersion: 1,
+    name: "limits",
+    documents: [
+      {
+        id: "limits",
+        title: "Importing support articles",
+        text: "Each article can contain up to 60,000 characters. The library holds 100 articles.",
+      },
+      {
+        id: "local-model",
+        title: "Local models",
+        text: "Generation runs on this device through WebGPU. Cached weights can be reused.",
+      },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        id: "other-" + i,
+        title: "Other " + i,
+        text: "Housekeeping rooms keys night audit reservations.",
+      })),
+    ],
+  };
+  const index = buildIndex(library);
+  assert.equal(
+    search(index, "what is the maximum article size")[0]?.articleId,
+    "limits",
+  );
+  assert.equal(search(index, "article character limit")[0]?.articleId, "limits");
+  assert.deepEqual(search(index, "what is the size of WebGPU"), []);
+});
 test("a lone generic title word does not retrieve an unrelated article", () => {
   const library: Library = {
     schemaVersion: 1,
@@ -336,6 +425,14 @@ test("unrelated or empty queries produce no evidence and never call a model", as
     "please help me",
     "how do I cook pasta for Qwen",
     "who won the football game yesterday",
+    "what time is it in WebGPU",
+    "what time is it for Qwen",
+    "WebGPU price",
+    "history of WebGPU",
+    "who invented Qwen",
+    "pasta WebGPU",
+    "clock WebGPU",
+    "weather WebGPU",
   ]) {
     const result = await answerQuestion(sample, question, {
       generate: async () => {

@@ -28,8 +28,12 @@
     {
       "id": "max-article-size",
       "question": "what is the maximum article size",
-      "acceptableIds": ["import-articles"],
-      "optional": true
+      "acceptableIds": ["import-articles"]
+    },
+    {
+      "id": "article-character-limit",
+      "question": "article character limit",
+      "acceptableIds": ["import-articles"]
     },
     {
       "id": "without-internet",

@@ -181,7 +181,13 @@ fileInput.addEventListener("change", async () => {
         throw new Error(
           "Import one library JSON, or a group of Markdown/text files.",
         );
-      next = validateLibrary(JSON.parse(await files[0]!.text()));
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await files[0]!.text());
+      } catch {
+        throw new Error("The selected file is not valid JSON.");
+      }
+      next = validateLibrary(parsed);
     } else {
       next = importTextFiles(
         await Promise.all(

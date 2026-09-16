@@ -14,6 +14,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
     "check": "npm run typecheck && npm test && npm run build",
+    "pack": "npm run build && node scripts/pack.mjs",
     "preview": "node scripts/preview.mjs",
     "import:kb": "node scripts/import-kb.mjs",
     "smoke:model": "node scripts/smoke-model.mjs"

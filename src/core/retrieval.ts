@@ -12,7 +12,11 @@ const INDEX_TITLE =
 const INDEX_SCORE_SCALE = 0.2;
 const DISTINCTIVE_DF = 0.1;
 const ARTICLE_COVERAGE = 0.35;
-const SYNONYM_GROUPS = [["add", "create"]];
+const SYNONYM_GROUPS = [
+  ["add", "create"],
+  ["size", "characters"],
+  ["maximum", "limit"],
+];
 
 export function stem(token: string): string {
   let word = token;
@@ -42,6 +46,13 @@ export function stem(token: string): string {
   return word;
 }
 
+/** How-to verbs that may stand in for a missing library word ("clear the cache"). */
+const ACTIONS = new Set(
+  "add create clear reset unload load refresh wipe flush purge empty process issue post delete remove update install download enable disable restore export import restart reboot cancel".split(
+    " ",
+  ).map(stem),
+);
+
 function synonymIndex(): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const group of SYNONYM_GROUPS) {
@@ -58,6 +69,8 @@ function synonymIndex(): Map<string, string[]> {
 const SYNONYMS = synonymIndex();
 /** Date words rank passages ("today's arrivals") but do not decide whether a question is covered. */
 const MODIFIERS = new Set(["today", "tomorrow", "yesterday"].map(stem));
+/** Clock questions collapse to leftover library nouns after stopword stripping. */
+const CLOCK_QUESTION = /\bwhat(?:['’]s| is) the time\b|\bwhat time is it\b/i;
 
 function expandContractions(text: string): string {
   return text
@@ -113,6 +126,10 @@ function isDistinctive(df: number, n: number): boolean {
   return df === 1 || (df > 0 && df / n <= DISTINCTIVE_DF);
 }
 
+function isActionConcept(variants: string[]): boolean {
+  return variants.some((term) => ACTIONS.has(term));
+}
+
 type ArticleInfo = { titleTerms: Set<string>; isIndex: boolean };
 
 function articleInfo(index: Passage[]): Map<string, ArticleInfo> {
@@ -162,18 +179,21 @@ function enoughOverlap(
   const q = gating.length;
   if (!hits.length) return false;
   if (hits.length >= Math.min(2, q) && hits.length / q >= 0.25) return true;
-  // One distinctive body word can carry a two-word question whose other word
-  // never appears: a paraphrase such as "clear the cache". Date words do not
-  // create that pair, and a title-only hit is not enough.
+  // One distinctive body word can carry a two-word how-to paraphrase whose
+  // other word is a support action that never appears ("clear the cache",
+  // "process a refund"). Leftover nouns from another question type (time,
+  // price, history) do not open the gate. Date words cannot form the pair,
+  // and a title-only hit is not enough.
   const hit = hits[0]!;
+  const missed = gating.find((position) => !hits.includes(position));
   return (
     q === 2 &&
     all.length === q &&
     hits.length === 1 &&
+    missed !== undefined &&
     isDistinctive(conceptFrequency[hit]!, n) &&
-    gating.every(
-      (position) => hits.includes(position) || conceptFrequency[position] === 0,
-    ) &&
+    conceptFrequency[missed] === 0 &&
+    isActionConcept(concepts[missed]!) &&
     concepts[hit]!.some((term) => bodyTokens.includes(term))
   );
 }
@@ -264,6 +284,7 @@ export function search(
   question: string,
   limit = 3,
 ): Passage[] {
+  if (CLOCK_QUESTION.test(question)) return [];
   const concepts = queryConcepts([...new Set(tokenize(question))]);
   if (!concepts.length || !index.length) return [];
   const tokens = index.map((p) => tokenize(p.title + " " + p.text));

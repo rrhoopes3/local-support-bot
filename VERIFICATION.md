@@ -19,3 +19,13 @@ Local-only artifacts (gitignored):
 - artifacts/fd24-library.json — 23 local SupportBot product articles exported for review/import
 
 All extension JavaScript and WebAssembly are bundled. Model weights are not included in Git; Chrome downloads them on explicit model loading. The test browser cache is separate from the user's normal Chrome profile.
+
+## Retrieval tightening — 2026-09-15
+
+Automated only. No GPU, browser, or fleet session was run for this pass.
+
+- Distinctive two-word exception now requires the unmatched word to be a support action (`clear`, `process`, `add`, …). Leftover nouns (`time`, `price`, `history`) plus a rare library term no longer retrieve.
+- Clock questions (`what time is it`, `what's the time`) return no evidence even when `time` and another library word co-occur.
+- `size`/`characters` and `maximum`/`limit` are one question word each, so "what is the maximum article size" hits the sample import article. That eval case is required.
+- Unit tests: 36/36, including the optional local corpus when `artifacts/fd24-library.json` is present.
+- `npm run pack` writes `artifacts/localsupbot-extension.zip` from `dist/extension`. Unzip before Load unpacked.
