@@ -49,13 +49,16 @@ Knowledge is stored in `chrome.storage.local`, not synchronized to a cloud accou
 
 ## Answer behavior
 
-1. Local BM25-style lexical retrieval selects up to three passages, each no more than 900 characters. Query and passage tokens share a cheap suffix stemmer (`s`/`es`/`ed`/`ing`, a trailing `e` so `charge` meets `charged` and `enable` meets `enabled`, and `or` so `process` meets `processor`). Synonyms such as add/create count as one question word.
-2. A passage passes when it matches at least two question words covering a quarter of the question, or the only word of a one-word question. A single distinctive word (in about 10% of passages or fewer) can carry a two-word how-to paraphrase when the other word never appears in the library, that other word is a support action (such as `clear` or `process`), and the distinctive word is in the passage body. Date words cannot form that pair, and leftover nouns from another kind of question (`time`, `price`, `history`) do not open the gate. Clock questions (`what time is it`, `what's the time`) return no evidence even if `time` and another library word co-occur. Date words (today, tomorrow, yesterday) help ranking but do not count toward the gate and cannot open it by themselves. Size/limit paraphrases treat `size` as `characters` and `maximum` as `limit` so "maximum article size" can match a 60,000-character limit. If no passage passes, the best article is chosen under the same rule so terms split across 900-character chunks can still retrieve; only its passages that match a question word are returned. Walkthrough catalogs and other index-only articles are downranked so procedures win. Numbered and "Step N" lines and "How do I…" titles are treated as procedures, so a numbered catalog is detected only by a catalog title (walkthroughs, table of contents, article index), and a bulleted step list can still look like a catalog. Questions that fail the gate return no evidence and never call the model. The gate is lexical, so a short question sharing one distinctive word with the library, or a longer one sharing two common words, can still retrieve.
-3. If a model is loaded, pass only the question, selected passages, and fixed grounding instructions.
-4. Constrain generation to JSON statements with allowed source IDs. Validate each statement, render the citations in code, and reject model-created addresses (`http(s)://`, `www.`), markdown/HTML/`javascript:` links, or repeated paragraphs by showing the passages instead. Clickable source URLs come only from library metadata.
-5. If generation refuses or fails citation checks, show the actual passages and keep the loaded model. If it reaches the length cap, say the answer was cut off, show the passages, and keep the model. A worker crash, a timeout, or a GPU/engine failure releases the worker and shows the passages. Stop cancels the answer and releases the worker.
+1. The library is split into overlapping passages of at most 900 characters, preferring newline and word boundaries. Token counts, article metadata, and inverted postings are prepared once and reused between questions. Library imports, replacement, and edits invalidate the cache; returned results are independent copies.
+2. Local BM25 retrieval uses Unicode normalization, light suffix stemming (including `reset`/`resetting`), numeric tokens, and a small synonym map. `add`/`create`, `size`/`characters`, and `maximum`/`limit` each count as one concept. Check-in and check-out spelling variants and common inflections retain their different meanings.
+3. Evidence must match at least two question concepts covering a quarter of the question, or the only concept of a one-concept question. A single distinctive body concept can carry a two-concept paraphrase only when the unmatched concept is a support action absent from the library (for example, `clear the cache`). Distinctiveness is measured across articles, so a long article is not penalized for repeating its topic in several passages. Date words help ranking but cannot open the evidence gate. Live-clock questions are rejected; documented check-in times and time limits remain searchable.
+4. Up to three passages are selected. Procedures outrank catalog pages, including common numbered and bulleted instructions. Actual body matches outrank title-only filler. Matching companion passages supply question concepts split across chunks; a partial match elsewhere does not suppress a more complete article. Questions that fail the gate return no evidence and never call the model.
+5. When a model is loaded, only the current question, selected passages, and fixed grounding instructions enter the prompt. Generation is constrained to JSON statements with allowed source IDs. Citation IDs and output formatting are checked before rendering; invented addresses, links, markup, or repeated paragraphs fall back to excerpts. Clickable source URLs come only from library metadata.
+6. Model refusal or invalid citations show the passages and keep the loaded model. A length-capped generation also keeps the model. Stop, a worker crash, a timeout, or another engine failure releases the worker and promptly settles pending work. A superseded operation cannot release its replacement model.
 
-Citation checks establish source identity and formatting; they **do not prove that a model's claims follow from the sources**. `tests/eval-questions.json` is the checked-in retrieval eval for the sample library and, when present, `artifacts/fd24-library.json`. Lexical search can still miss paraphrases that do not share stems or the small synonym map.
+The model runtime JavaScript is loaded only when **Load model** or **Remove selected model cache** is used, keeping search startup small. Article bodies in the library browser are rendered when expanded.
+
+Citation checks establish source identity and formatting; they **do not prove that a model's claims follow from the sources**. Retrieval is lexical: it can miss paraphrases without shared terms and can admit an unrelated question sharing enough incidental words. `tests/eval-questions.json` evaluates the sample library and, when present, `artifacts/fd24-library.json`; focused regressions cover normalization, ranking, chunk coverage, and cache invalidation.
 
 The extension has no content script and cannot read or alter the host page. It cannot execute PMS actions or launch walkthrough overlays.
 
@@ -79,6 +82,7 @@ npm test
 npm run build
 npx playwright install chromium
 npm run test:browser
+npm run benchmark:retrieval -- --output artifacts/retrieval-current.json
 npm run preview
 ```
 
@@ -91,6 +95,8 @@ npm run pack
 writes `artifacts/localsupbot-extension.zip` after a fresh build. Unzip it before Load unpacked.
 
 Preview serves the same panel at `http://127.0.0.1:4173/panel.html` with the extension's CSP. It uses browser localStorage in place of Chrome extension storage and does not test toolbar integration.
+
+The retrieval benchmark reports cold initialization, warm index search, and warm library search for the sample library, optional local corpus, and a deterministic 1.8 MB / 100-article library. It includes broad matches, cross-passage queries, misses, and a question near the 500-character limit. Timings are descriptive; there are no machine-dependent timing assertions in the benchmark. Increase `--cold-runs` and `--warm-runs` for more observations.
 
 Browser tests load the **real MV3 build** in a temporary, isolated Chromium profile. They verify import/storage, source rendering, no initial external requests, inert imported HTML, runtime validation, loading cancellation, offline model failure recovery, and narrow layouts. The main suite does not download model weights.
 

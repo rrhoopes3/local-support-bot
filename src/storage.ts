@@ -4,7 +4,7 @@ import type { Library } from "./core/types";
 const KEY = "localsupbot.library.v1";
 function readPreviewStore(): unknown {
   const raw = localStorage.getItem(KEY);
-  if (!raw) return null;
+  if (raw === null) return null;
   try {
     return JSON.parse(raw);
   } catch {
@@ -19,7 +19,7 @@ export async function readLibrary(): Promise<Library | null> {
     typeof chrome !== "undefined" && chrome.storage?.local
       ? (await chrome.storage.local.get(KEY))[KEY]
       : readPreviewStore();
-  return value ? validateLibrary(value) : null;
+  return value == null ? null : validateLibrary(value);
 }
 export async function saveLibrary(library: Library): Promise<void> {
   const checked = validateLibrary(library);

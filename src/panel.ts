@@ -5,7 +5,8 @@ import {
   validateLibrary,
 } from "./core/library";
 import type { Answer, Library } from "./core/types";
-import { LocalModel, MODELS } from "./model";
+import type { LocalModel } from "./model";
+import MODELS from "../models.json";
 import { readLibrary, saveLibrary } from "./storage";
 
 function element<T extends HTMLElement>(id: string): T {
@@ -13,7 +14,8 @@ function element<T extends HTMLElement>(id: string): T {
   if (!el) throw new Error("Missing element: " + id);
   return el as T;
 }
-const model = new LocalModel();
+let model: LocalModel | null = null;
+let modelModule: Promise<typeof import("./model")> | undefined;
 const select = element<HTMLSelectElement>("model-select");
 const load = element<HTMLButtonElement>("load-model");
 const progress = element<HTMLProgressElement>("load-progress");
@@ -27,15 +29,36 @@ let library: Library = { schemaVersion: 1, name: "No library", documents: [] };
 let busy = false;
 let active: AbortController | null = null;
 
+async function getModel(signal?: AbortSignal): Promise<LocalModel> {
+  if (signal?.aborted) throw new DOMException("Stopped.", "AbortError");
+  if (model) return model;
+  const loading = (modelModule ??= import("./model").catch((error) => {
+    modelModule = undefined;
+    throw error;
+  }));
+  let abort: () => void = () => {};
+  const stopped = new Promise<never>((_, reject) => {
+    abort = () => reject(new DOMException("Stopped.", "AbortError"));
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    const { LocalModel } = await Promise.race([loading, stopped]);
+    if (signal?.aborted) throw new DOMException("Stopped.", "AbortError");
+    return (model ??= new LocalModel());
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
 function status(el: HTMLElement, text: string, error = false): void {
   el.textContent = text;
   el.classList.toggle("error", error);
 }
 function updateState(): void {
-  element("model-state").textContent = model.ready
+  element("model-state").textContent = model?.ready
     ? "Model ready"
     : "Search ready";
-  element("answer-mode").textContent = model.ready
+  element("answer-mode").textContent = model?.ready
     ? "On-device model · cited answers"
     : "Local search · sources included";
 }
@@ -68,7 +91,7 @@ function modelInfo(): void {
 }
 for (const m of MODELS) select.add(new Option(m.label, m.id));
 select.addEventListener("change", () => {
-  model.release();
+  model?.release();
   modelInfo();
   updateState();
   status(modelStatus, "Model selected. Click Load model to use it.");
@@ -79,17 +102,24 @@ function showLibrary(): void {
   element("library-name").textContent = library.name;
   element("article-count").textContent = String(library.documents.length);
   const list = element("article-list");
-  list.replaceChildren();
+  const fragment = document.createDocumentFragment();
   for (const doc of library.documents) {
     const details = document.createElement("details");
     details.className = "library-article";
     const title = document.createElement("summary");
     title.textContent = doc.title;
-    const body = document.createElement("p");
-    body.textContent = doc.text;
-    details.append(title, body);
-    list.append(details);
+    details.append(title);
+    const showBody = (): void => {
+      if (!details.open) return;
+      const body = document.createElement("p");
+      body.textContent = doc.text;
+      details.append(body);
+      details.removeEventListener("toggle", showBody);
+    };
+    details.addEventListener("toggle", showBody);
+    fragment.append(details);
   }
+  list.replaceChildren(fragment);
 }
 function clearChat(): void {
   log.querySelectorAll(".message").forEach((message) => message.remove());
@@ -115,7 +145,8 @@ load.addEventListener("click", async () => {
     "Preparing the local model. The first download can take several minutes.",
   );
   try {
-    await model.load(
+    const localModel = await getModel(active.signal);
+    await localModel.load(
       select.value,
       (report) => {
         progress.value = report.progress;
@@ -146,7 +177,7 @@ load.addEventListener("click", async () => {
 element("cancel-load").addEventListener("click", () => active?.abort());
 element("stop-answer").addEventListener("click", () => active?.abort());
 element("unload-model").addEventListener("click", () => {
-  model.release();
+  model?.release();
   updateState();
   status(modelStatus, "Model memory released. Cached weights are kept.");
 });
@@ -154,7 +185,8 @@ element("clear-cache").addEventListener("click", async () => {
   if (busy) return;
   setBusy(true);
   try {
-    await model.clearCache(select.value);
+    const localModel = await getModel();
+    await localModel.clearCache(select.value);
     status(
       modelStatus,
       "Selected model cache removed. Your articles are still here.",
@@ -183,7 +215,7 @@ fileInput.addEventListener("change", async () => {
         );
       let parsed: unknown;
       try {
-        parsed = JSON.parse(await files[0]!.text());
+        parsed = JSON.parse((await files[0]!.text()).replace(/^\uFEFF/, ""));
       } catch {
         throw new Error("The selected file is not valid JSON.");
       }
@@ -306,7 +338,7 @@ element<HTMLFormElement>("ask-form").addEventListener(
     appendMessage("user", text);
     const answerEl = appendMessage(
       "assistant",
-      model.ready
+      model?.ready
         ? "Reading the matching passages on this device…"
         : "Searching your articles…",
     );
@@ -320,7 +352,7 @@ element<HTMLFormElement>("ask-form").addEventListener(
         await answerQuestion(
           library,
           text,
-          model.ready ? model : undefined,
+          model?.ready ? model : undefined,
           active.signal,
         ),
       );
@@ -334,7 +366,7 @@ element<HTMLFormElement>("ask-form").addEventListener(
       setBusy(false);
       element("stop-answer").hidden = true;
       updateState();
-      if (!model.ready)
+      if (!model?.ready)
         status(
           modelStatus,
           "Article search is ready. Load a model for composed answers.",
@@ -344,7 +376,12 @@ element<HTMLFormElement>("ask-form").addEventListener(
   },
 );
 question.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
+  if (
+    event.key === "Enter" &&
+    !event.shiftKey &&
+    !event.isComposing &&
+    event.keyCode !== 229
+  ) {
     event.preventDefault();
     element<HTMLFormElement>("ask-form").requestSubmit();
   }
@@ -359,7 +396,7 @@ document.querySelectorAll<HTMLButtonElement>(".suggestion").forEach((button) =>
 element("clear-chat").addEventListener("click", clearChat);
 window.addEventListener("pagehide", () => {
   active?.abort();
-  model.release();
+  model?.release();
 });
 setBusy(true);
 try {

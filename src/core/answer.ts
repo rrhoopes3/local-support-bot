@@ -1,5 +1,5 @@
 import { decodeModelResponse } from "./response";
-import { buildIndex, search } from "./retrieval";
+import { searchLibrary } from "./retrieval";
 import {
   GenerateError,
   type Answer,
@@ -98,7 +98,7 @@ export async function answerQuestion(
   if (!trimmed || trimmed.length > MAX_QUESTION_CHARS)
     throw new Error("Ask a question of 1–500 characters.");
   signal?.throwIfAborted();
-  const passages = search(buildIndex(library), trimmed);
+  const passages = searchLibrary(library, trimmed);
   const citations = citationsFor(passages);
   if (!passages.length) {
     return {
